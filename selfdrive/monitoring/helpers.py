@@ -157,8 +157,8 @@ class DriverMonitoring:
     self.active_monitoring_mode = True
     self.is_model_uncertain = False
     self.hi_stds = 0
-    self.threshold_pre = self.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL / self.settings._DISTRACTED_TIME
-    self.threshold_prompt = self.settings._DISTRACTED_PROMPT_TIME_TILL_TERMINAL / self.settings._DISTRACTED_TIME
+    self.threshold_pre = ( self.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL + 30) / ( self.settings._DISTRACTED_TIME + 30)
+    self.threshold_prompt = ( self.settings._DISTRACTED_PROMPT_TIME_TILL_TERMINAL + 30) / ( self.settings._DISTRACTED_TIME + 30 )
 
     self._reset_awareness()
     self._set_timers(active_monitoring=True)
@@ -178,7 +178,7 @@ class DriverMonitoring:
   def _set_timers(self, active_monitoring):
     if self.active_monitoring_mode and self.awareness <= self.threshold_prompt:
       if active_monitoring:
-        self.step_change = self.settings._DT_DMON / self.settings._DISTRACTED_TIME
+        self.step_change = self.settings._DT_DMON / (self.settings._DISTRACTED_TIME + 30)
       else:
         self.step_change = 0.
       return  # no exploit after orange alert
@@ -191,18 +191,18 @@ class DriverMonitoring:
         self.awareness_passive = self.awareness
         self.awareness = self.awareness_active
 
-      self.threshold_pre = self.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL / self.settings._DISTRACTED_TIME
-      self.threshold_prompt = self.settings._DISTRACTED_PROMPT_TIME_TILL_TERMINAL / self.settings._DISTRACTED_TIME
-      self.step_change = self.settings._DT_DMON / self.settings._DISTRACTED_TIME
+      self.threshold_pre = ( self.settings._DISTRACTED_PRE_TIME_TILL_TERMINAL + 30) / ( self.settings._DISTRACTED_TIME +30 )
+      self.threshold_prompt = ( self.settings._DISTRACTED_PROMPT_TIME_TILL_TERMINAL + 30) / ( self.settings._DISTRACTED_TIME + 30 )
+      self.step_change = self.settings._DT_DMON / (self.settings._DISTRACTED_TIME + 30)
       self.active_monitoring_mode = True
     else:
       if self.active_monitoring_mode:
         self.awareness_active = self.awareness
         self.awareness = self.awareness_passive
 
-      self.threshold_pre = self.settings._AWARENESS_PRE_TIME_TILL_TERMINAL / self.settings._AWARENESS_TIME
-      self.threshold_prompt = self.settings._AWARENESS_PROMPT_TIME_TILL_TERMINAL / self.settings._AWARENESS_TIME
-      self.step_change = self.settings._DT_DMON / self.settings._AWARENESS_TIME
+      self.threshold_pre = ( self.settings._AWARENESS_PRE_TIME_TILL_TERMINAL + 30) / (self.settings._AWARENESS_TIME  + 30)
+      self.threshold_prompt = (self.settings._AWARENESS_PROMPT_TIME_TILL_TERMINAL + 30) / (self.settings._AWARENESS_TIME + 30)
+      self.step_change = self.settings._DT_DMON / ( self.settings._AWARENESS_TIME + 30)
       self.active_monitoring_mode = False
 
   def _set_policy(self, model_data, car_speed):
@@ -310,8 +310,8 @@ class DriverMonitoring:
   def _update_events(self, driver_engaged, op_engaged, standstill, wrong_gear, car_speed, steering_wheel_engaged):
     self._reset_events()
     # Block engaging after max number of distrations or when alert active
-    if self.terminal_alert_cnt >= self.settings._MAX_TERMINAL_ALERTS or \
-       self.terminal_time >= self.settings._MAX_TERMINAL_DURATION or \
+    if self.terminal_alert_cnt >= ( self.settings._MAX_TERMINAL_ALERTS + 20 ) or \
+       self.terminal_time >= ( self.settings._MAX_TERMINAL_DURATION +40 ) or \
        self.always_on and self.awareness <= self.threshold_prompt:
       self.current_events.add(EventName.tooDistracted)
 
@@ -327,7 +327,7 @@ class DriverMonitoring:
       self._reset_awareness()
       return
 
-    driver_attentive = self.driver_distraction_filter.x < 0.37
+    driver_attentive = self.driver_distraction_filter.x < 0.45
     awareness_prev = self.awareness
 
     if (driver_attentive and self.face_detected and self.pose.low_std and self.awareness > 0):
@@ -336,7 +336,7 @@ class DriverMonitoring:
         return
       # only restore awareness when paying attention and alert is not red
       self.awareness = min(self.awareness + ((self.settings._RECOVERY_FACTOR_MAX-self.settings._RECOVERY_FACTOR_MIN)*
-                                             (1.-self.awareness)+self.settings._RECOVERY_FACTOR_MIN)*self.step_change, 1.)
+                                             (1.-self.awareness)+self.settings._RECOVERY_FACTOR_MIN+5)*self.step_change, 1.)
       if self.awareness == 1.:
         self.awareness_passive = min(self.awareness_passive + self.step_change, 1.)
       # don't display alert banner when awareness is recovering and has cleared orange
@@ -349,7 +349,7 @@ class DriverMonitoring:
     always_on_red_exemption = always_on_valid and not op_engaged and _reaching_terminal
     always_on_lowspeed_exemption = always_on_valid and not op_engaged and car_speed < self.settings._ALWAYS_ON_ALERT_MIN_SPEED and _reaching_audible
 
-    certainly_distracted = self.driver_distraction_filter.x > 0.63 and self.driver_distracted and self.face_detected
+    certainly_distracted = self.driver_distraction_filter.x > 0.8 and self.driver_distracted and self.face_detected
     maybe_distracted = self.hi_stds > self.settings._HI_STD_FALLBACK_TIME or not self.face_detected
 
     if certainly_distracted or maybe_distracted:
@@ -365,7 +365,7 @@ class DriverMonitoring:
       self.terminal_time += 1
       if awareness_prev > 0.:
         self.terminal_alert_cnt += 1
-    elif self.awareness <= self.threshold_prompt:
+    elif self.awareness <= (self.threshold_prompt - 0.5):
       # prompt orange alert
       alert = EventName.promptDriverDistracted if self.active_monitoring_mode else EventName.promptDriverUnresponsive
     elif self.awareness <= self.threshold_pre:
