@@ -178,7 +178,7 @@ class DriverMonitoring:
   def _set_policy(self, target_policy):
     if self.active_policy == MonitoringPolicy.vision and self.awareness <= self.threshold_alert_2:
       if target_policy == MonitoringPolicy.vision:
-        self.step_change = DT_DMON / self.settings._VISION_POLICY_ALERT_3_TIMEOUT
+        self.step_change = DT_DMON / ( self.settings._VISION_POLICY_ALERT_3_TIMEOUT + 30)
       else:
         self.step_change = 0.
       return  # no exploit after orange alert
@@ -210,11 +210,11 @@ class DriverMonitoring:
     k1 = max(-0.00156*((car_speed-16)**2)+0.6, 0.2)
     bp_normal = max(min(bp / k1, 0.5),0)
     self.pose.cfactor_pitch = np.interp(bp_normal, [0, 0.5],
-                                           [self.settings._POSE_PITCH_THRESHOLD_SLACK,
-                                            self.settings._POSE_PITCH_THRESHOLD_STRICT]) / self.settings._POSE_PITCH_THRESHOLD
+                                           [self.settings._POSE_PITCH_THRESHOLD_SLACK + .2,
+                                            self.settings._POSE_PITCH_THRESHOLD_STRICT + .2]) / self.settings._POSE_PITCH_THRESHOLD + .2
     self.pose.cfactor_yaw = np.interp(bp_normal, [0, 0.5],
-                                           [self.settings._POSE_YAW_THRESHOLD_SLACK,
-                                            self.settings._POSE_YAW_THRESHOLD_STRICT]) / self.settings._POSE_YAW_THRESHOLD
+                                           [self.settings._POSE_YAW_THRESHOLD_SLACK + .2,
+                                            self.settings._POSE_YAW_THRESHOLD_STRICT + .2]) / self.settings._POSE_YAW_THRESHOLD + .2
 
   def _get_distracted_types(self):
     self.distracted_types = defaultdict(bool)
@@ -237,9 +237,9 @@ class DriverMonitoring:
     pitch_threshold = self.settings._POSE_PITCH_THRESHOLD * self.pose.cfactor_pitch if self.pose.calibrated else self.settings._PITCH_NATURAL_THRESHOLD
     yaw_threshold = self.settings._POSE_YAW_THRESHOLD * self.pose.cfactor_yaw
 
-    self.distracted_types['pose'] = bool((pitch_error > pitch_threshold) or (yaw_error > yaw_threshold))
-    self.distracted_types['eye'] = bool((self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD)
-    self.distracted_types['phone'] = bool(self.phone_prob > self.settings._PHONE_THRESH)
+    self.distracted_types['pose'] = bool((pitch_error > pitch_threshold + 0.2) or (yaw_error > yaw_threshold + 0.2))
+    self.distracted_types['eye'] = bool((self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD + 0.2)
+    self.distracted_types['phone'] = bool(self.phone_prob > self.settings._PHONE_THRESH + 0.3)
 
   def _update_states(self, driver_state, cal_rpy, car_speed, op_engaged, lowspeed, demo_mode=False, steering_angle_deg=0.):
     rhd_pred = driver_state.wheelOnRightProb
@@ -311,7 +311,7 @@ class DriverMonitoring:
     self.alert_level = AlertLevel.none
     self.driver_interacting = driver_engaged
 
-    if self.alert_3_cnt >= self.settings._MAX_ALERT_3 or self.no_response_cnt >= self.settings._MAX_NO_RESPONSE:
+    if (self.alert_3_cnt >= self.settings._MAX_ALERT_3 + 99) or (self.no_response_cnt >= self.settings._MAX_NO_RESPONSE+9):
       if not self.lockout_active:
         self.lockout_count += 1
         self.lockout_duration = self.settings._LOCKOUT_TIMES[min(self.lockout_count - 1, len(self.settings._LOCKOUT_TIMES) - 1)]
@@ -342,7 +342,7 @@ class DriverMonitoring:
     always_on_exemption = always_on_valid and not op_engaged and _reaching_alert_3
 
     if self.awareness > 0 and \
-       ((self.driver_distraction_filter.x < 0.37 and self.face_detected and self.pose.low_std) or lowspeed_exemption):
+       ((self.driver_distraction_filter.x < 0.50 and self.face_detected and self.pose.low_std) or lowspeed_exemption):
       if self.driver_interacting:
         self._reset_awareness()
         return
