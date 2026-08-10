@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import IntFlag
 
-from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms
+from opendbc.car import Bus, CarSpecs, DbcDict, DT_CTRL, PlatformConfig, Platforms
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.structs import CarParams
 from opendbc.car.docs_definitions import CarHarness, CarDocs, CarParts
@@ -13,17 +13,28 @@ Ecu = CarParams.Ecu
 # Steer torque limits
 
 class CarControllerParams:
-  STEER_MAX = 800                # theoretical max_steer 2047
-  STEER_DELTA_UP = 10             # torque increase per refresh
-  STEER_DELTA_DOWN = 25           # torque decrease per refresh
   STEER_DRIVER_ALLOWANCE = 15     # allowed driver torque before start limiting
-  STEER_DRIVER_MULTIPLIER = 1     # weight driver torque
   STEER_DRIVER_FACTOR = 1         # from dbc
-  STEER_ERROR_MAX = 350           # max delta between torque cmd and torque motor
   STEER_STEP = 1  # 100 Hz
 
   def __init__(self, CP):
-    pass
+    # Gate the higher-authority steering tune on the CX-5 2022+ EPS, not the car model, so the
+    # CX-9 that shares this EPS and CX-5-EPS swaps keep it. steer_to_zero sets minSteerSpeed == 0
+    # (interface.py / STEER_TO_ZERO_EPS_FW) — the same EPS-present proxy carstate.py gates on.
+    if CP.minSteerSpeed == 0:
+      self.STEER_MAX = 1200        # theoretical max_steer 2047; EPS clips above ceiling per speed
+      # 1200 below 32 mph for full low-speed authority and feedforward overshoot.
+      # 800 above for smoother highway steering with 22% PID headroom above EPS ceiling (620).
+      self.STEER_MAX_LOOKUP = ([0., 14.2, 14.5], [1200, 1200, 800])
+      # EPS hardware rate limit: 12 units/frame at all speeds (4-unit quantization, max 3 steps).
+      self.STEER_DELTA_UP = 12
+      self.STEER_DELTA_DOWN = 25
+      self.STEER_DRIVER_MULTIPLIER = 15   # weight driver torque (tuned for the CX-5 EPS; upstream stock is 1)
+    else:
+      self.STEER_MAX = 800         # theoretical max_steer 2047
+      self.STEER_DELTA_UP = 10
+      self.STEER_DELTA_DOWN = 25
+      self.STEER_DRIVER_MULTIPLIER = 1    # upstream stock
 
 
 @dataclass
@@ -37,6 +48,11 @@ class MazdaCarSpecs(CarSpecs):
   tireStiffnessFactor: float = 0.7  # not optimized yet
 
 
+@dataclass(frozen=True, kw_only=True)
+class MazdaCX5_2022CarSpecs(CarSpecs):
+  tireStiffnessFactor: float = 1.0
+
+
 class MazdaFlags(IntFlag):
   # Static flags
   # Gen 1 hardware: same CAN messages and same camera
@@ -45,7 +61,7 @@ class MazdaFlags(IntFlag):
 
 @dataclass
 class MazdaPlatformConfig(PlatformConfig):
-  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: 'mazda_2017'})
+  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: 'mazda_2017', Bus.radar: 'mazda_2017'})
   flags: int = MazdaFlags.GEN1
 
 
@@ -56,7 +72,7 @@ class CAR(Platforms):
   )
   MAZDA_CX9 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-9 2016-20")],
-    MazdaCarSpecs(mass=4217 * CV.LB_TO_KG, wheelbase=3.1, steerRatio=17.6)
+    MazdaCarSpecs(mass=4217 * CV.LB_TO_KG, wheelbase=2.93, steerRatio=17.6)
   )
   MAZDA_3 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda 3 2017-18")],
@@ -68,11 +84,11 @@ class CAR(Platforms):
   )
   MAZDA_CX9_2021 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-9 2021-23", video="https://youtu.be/dA3duO4a0O4")],
-    MAZDA_CX9.specs
+    MazdaCarSpecs(mass=4409 * CV.LB_TO_KG, wheelbase=2.93, steerRatio=17.6)
   )
   MAZDA_CX5_2022 = MazdaPlatformConfig(
     [MazdaCarDocs("Mazda CX-5 2022-25")],
-    MAZDA_CX5.specs,
+    MazdaCX5_2022CarSpecs(mass=3728 * CV.LB_TO_KG, wheelbase=2.698, steerRatio=18.1),  # 15.5 is factory spec; 18.1 from paramsd learner (2.9M samples)
   )
 
 
@@ -80,6 +96,7 @@ class LKAS_LIMITS:
   STEER_THRESHOLD = 15
   DISABLE_SPEED = 45    # kph
   ENABLE_SPEED = 52     # kph
+
 
 # EPS firmware versions with steer-to-zero capability (2022+ CX-5 EPS). Matched against
 # car_fw rather than the fingerprinted platform so the same EPS swapped into another Mazda
@@ -89,6 +106,7 @@ STEER_TO_ZERO_EPS_FW = {
   b'KBST-3210X-A-00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
   b'KSD5-3210X-C-00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
 }
+
 
 class Buttons:
   NONE = 0
