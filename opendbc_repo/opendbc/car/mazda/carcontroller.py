@@ -1,5 +1,5 @@
 from opendbc.can import CANPacker
-from opendbc.car import Bus, structs
+from opendbc.car import Bus, DT_CTRL, make_tester_present_msg, rate_limit, structs, uds
 from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.mazda import mazdacan
@@ -20,12 +20,20 @@ class CarController(CarControllerBase):
 
     apply_torque = 0
 
+    # Speed-dependent STEER_MAX (CX-5 2022: 1200 below 32 mph, 800 above)
+    if hasattr(self.params, 'STEER_MAX_LOOKUP'):
+      steer_max = round(float(np.interp(CS.out.vEgoRaw, self.params.STEER_MAX_LOOKUP[0],
+                                         self.params.STEER_MAX_LOOKUP[1])))
+    else:
+      steer_max = self.params.STEER_MAX
+
     if CC.latActive:
       # calculate steer and also set limits due to driver torque
-      new_torque = int(round(CC.actuators.torque * CarControllerParams.STEER_MAX))
+      new_torque = int(round(CC.actuators.torque * steer_max))
       apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last,
-                                                      CS.out.steeringTorque, CarControllerParams)
+                                                      CS.out.steeringTorque, self.params, steer_max)
 
+    virtual_resume_sent = False
     if CC.cruiseControl.cancel:
       # If brake is pressed, let us wait >70ms before trying to disable crz to avoid
       # a race condition with the stock system, where the second cancel from openpilot
@@ -58,8 +66,11 @@ class CarController(CarControllerBase):
                                                       self.frame, apply_torque, CS.cam_lkas))
 
     new_actuators = CC.actuators.as_builder()
-    new_actuators.torque = apply_torque / CarControllerParams.STEER_MAX
+    new_actuators.torque = apply_torque / steer_max
     new_actuators.torqueOutputCan = apply_torque
+    # report what actually went on the wire, not the plan: the clip, the standstill hold values,
+    # the slew limit, and the zero we send through a gas override all live in accel_last
+    new_actuators.accel = self.accel_last
 
     self.frame += 1
     return new_actuators, can_sends
