@@ -178,7 +178,7 @@ class DriverMonitoring:
   def _set_timers(self, active_monitoring):
     if self.active_monitoring_mode and self.awareness <= self.threshold_prompt:
       if active_monitoring:
-        self.step_change = self.settings._DT_DMON / self.settings._DISTRACTED_TIME
+        self.step_change = self.settings._DT_DMON / (self.settings._DISTRACTED_TIME + 30)
       else:
         self.step_change = 0.
       return  # no exploit after orange alert
@@ -210,11 +210,11 @@ class DriverMonitoring:
     k1 = max(-0.00156*((car_speed-16)**2)+0.6, 0.2)
     bp_normal = max(min(bp / k1, 0.5),0)
     self.pose.cfactor_pitch = np.interp(bp_normal, [0, 0.5],
-                                           [self.settings._POSE_PITCH_THRESHOLD_SLACK,
-                                            self.settings._POSE_PITCH_THRESHOLD_STRICT]) / self.settings._POSE_PITCH_THRESHOLD
+                                           [self.settings._POSE_PITCH_THRESHOLD_SLACK + .2,
+                                            self.settings._POSE_PITCH_THRESHOLD_STRICT + .2]) / self.settings._POSE_PITCH_THRESHOLD + .2
     self.pose.cfactor_yaw = np.interp(bp_normal, [0, 0.5],
-                                           [self.settings._POSE_YAW_THRESHOLD_SLACK,
-                                            self.settings._POSE_YAW_THRESHOLD_STRICT]) / self.settings._POSE_YAW_THRESHOLD
+                                           [self.settings._POSE_YAW_THRESHOLD_SLACK + .2,
+                                            self.settings._POSE_YAW_THRESHOLD_STRICT + .2]) / self.settings._POSE_YAW_THRESHOLD + .2
 
   def _get_distracted_types(self):
     distracted_types = []
@@ -233,7 +233,7 @@ class DriverMonitoring:
        yaw_error > self.settings._POSE_YAW_THRESHOLD*self.pose.cfactor_yaw:
       distracted_types.append(DistractedType.DISTRACTED_POSE)
 
-    if (self.blink.left + self.blink.right)*0.5 > self.settings._BLINK_THRESHOLD:
+    if (self.blink.left + self.blink.right)*0.5 > (self.settings._BLINK_THRESHOLD + 0.2 ):
       distracted_types.append(DistractedType.DISTRACTED_BLINK)
 
     if self.ee1_calibrated:
@@ -310,8 +310,8 @@ class DriverMonitoring:
   def _update_events(self, driver_engaged, op_engaged, standstill, wrong_gear, car_speed):
     self._reset_events()
     # Block engaging until ignition cycle after max number or time of distractions
-    if self.terminal_alert_cnt >= self.settings._MAX_TERMINAL_ALERTS or \
-       self.terminal_time >= self.settings._MAX_TERMINAL_DURATION:
+    if self.terminal_alert_cnt >= (self.settings._MAX_TERMINAL_ALERTS + 20) or \
+       self.terminal_time >= (self.settings._MAX_TERMINAL_DURATION + 30):
       if not self.too_distracted:
         self.params.put_bool_nonblocking("DriverTooDistracted", True)
       self.too_distracted = True
@@ -328,7 +328,7 @@ class DriverMonitoring:
       self._reset_awareness()
       return
 
-    driver_attentive = self.driver_distraction_filter.x < 0.37
+    driver_attentive = self.driver_distraction_filter.x < 0.45
     awareness_prev = self.awareness
 
     if (driver_attentive and self.face_detected and self.pose.low_std and self.awareness > 0):
@@ -357,7 +357,7 @@ class DriverMonitoring:
       # should always be counting if distracted unless at standstill (lowspeed for always-on) and reaching orange
       # also will not be reaching 0 if DM is active when not engaged
       if not (standstill_orange_exemption or always_on_red_exemption or (always_on_lowspeed_exemption and _reaching_audible)):
-        self.awareness = max(self.awareness - self.step_change, -0.1)
+        self.awareness = max(self.awareness - (self.step_change), -0.1)
 
     alert = None
     if self.awareness <= 0.:
@@ -366,7 +366,7 @@ class DriverMonitoring:
       self.terminal_time += 1
       if awareness_prev > 0.:
         self.terminal_alert_cnt += 1
-    elif self.awareness <= self.threshold_prompt:
+    elif self.awareness <= (self.threshold_prompt - 0.25):
       # prompt orange alert
       alert = EventName.promptDriverDistracted if self.active_monitoring_mode else EventName.promptDriverUnresponsive
     elif self.awareness <= self.threshold_pre and not always_on_lowspeed_exemption:
