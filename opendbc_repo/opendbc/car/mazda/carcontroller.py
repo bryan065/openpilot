@@ -83,7 +83,28 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       ldw = CC.hudControl.visualAlert == VisualAlert.ldw
       steer_required = CC.hudControl.visualAlert == VisualAlert.steerRequired
       # TODO: find a way to silence audible warnings so we can add more hud alerts
+
+      # supress HUD warnings for steering limits
+      # Check for steersaturated events
+      steer_saturated_event = any(
+          e.name == "steerSaturated"
+          for e in CC.events
+      )
+
+      # Suppress steerRequired when EPS is saturated during normal driving
+      if steer_required:
+          # Don't suppress if below minimum steer speed (might be real issue)
+          if CS.vEgo <= self.CP.minSteerSpeed:
+              pass  # Keep the alert
+          # Don't suppress if there's an actual steering fault
+          elif CS.steerFaultTemporary or CS.steerFaultPermanent:
+              pass  # Keep the alert
+          # Suppress if it's just EPS torque saturation during normal operation
+          elif steer_saturated_event:
+              steer_required = False
+
       steer_required = steer_required and CS.lkas_allowed_speed
+
       can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
 
     # send steering command
