@@ -85,7 +85,14 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
       # TODO: find a way to silence audible warnings so we can add more hud alerts
 
       # supress HUD warnings for steering limits
-      if steer_required:
+      # Check for steersaturated events
+      steer_saturated_event = any(
+          e.name == "steerSaturated"
+          for e in CC.events
+      )
+
+      # supress HUD warnings for steering limits
+      if steer_required or steer_saturated_event:
         steer_required == False
 
       steer_required = steer_required and CS.lkas_allowed_speed
