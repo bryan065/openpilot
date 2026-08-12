@@ -86,7 +86,7 @@ class CarController(CarControllerBase, IntelligentCruiseButtonManagementInterfac
 
       # supress HUD warnings for steering limits
       if steer_required:
-        steer_required == False
+        steer_required = False
 
       steer_required = steer_required and CS.lkas_allowed_speed
       can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
